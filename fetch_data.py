@@ -4,8 +4,8 @@ import requests
 import pandas as pd
 import os
 import html
-import re
 import time
+import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -46,50 +46,52 @@ def fetch_reddit_posts(subreddit="politics", search_query="trump", limit=100):
     return posts
 
 ### 2. Fetch 4chan Data with Comments ###
-def fetch_4chan_posts(board="pol", search_query="trump"):
-    catalog_url = f"https://a.4cdn.org/{board}/catalog.json"
-    response = requests.get(catalog_url)
-    catalog_data = response.json()
-
+def fetch_4chan_posts(boards=["pol"], search_query="trump"):
     posts = []
-    for page in catalog_data:
-        for thread in page['threads']:
-            # Clean the content and title
-            title = clean_html_text(thread.get('sub', ''))
-            content = clean_html_text(thread.get('com', ''))
+    for board in boards:
+        catalog_url = f"https://a.4cdn.org/{board}/catalog.json"
+        response = requests.get(catalog_url)
+        catalog_data = response.json()
 
-            if search_query.lower() in title.lower() or search_query.lower() in content.lower():
-                thread_id = thread['no']
+        for page in catalog_data:
+            for thread in page['threads']:
+                # Clean the content and title
+                title = clean_html_text(thread.get('sub', ''))
+                content = clean_html_text(thread.get('com', ''))
 
-                thread_url = f"https://a.4cdn.org/{board}/thread/{thread_id}.json"
-                try:
-                    thread_response = requests.get(thread_url)
-                    thread_data = thread_response.json()
+                if search_query.lower() in title.lower() or search_query.lower() in content.lower():
+                    thread_id = thread['no']
 
-                    comments = []
-                    for comment in thread_data['posts'][1:]:
-                        clean_comment_text = clean_html_text(comment.get('com', ''))
-                        comments.append({
-                            "comment_id": comment['no'],
-                            "comment_text": clean_comment_text,
-                            "comment_author": "Anonymous",
-                            "comment_timestamp": comment['time']
+                    thread_url = f"https://a.4cdn.org/{board}/thread/{thread_id}.json"
+                    try:
+                        thread_response = requests.get(thread_url)
+                        thread_data = thread_response.json()
+
+                        comments = []
+                        for comment in thread_data['posts'][1:]:
+                            clean_comment_text = clean_html_text(comment.get('com', ''))
+                            comments.append({
+                                "comment_id": comment['no'],
+                                "comment_text": clean_comment_text,
+                                "comment_author": "Anonymous",
+                                "comment_timestamp": comment['time']
+                            })
+
+                        posts.append({
+                            "platform": "4chan",
+                            "id": thread_id,
+                            "title": title,
+                            "content": content,
+                            "timestamp": thread['time'],
+                            "comments_count": thread.get('replies', 0),
+                            "upvotes": None,
+                            "author": "Anonymous",
+                            "comments": comments,
+                            "topic": search_query,
+                            "board": board
                         })
-
-                    posts.append({
-                        "platform": "4chan",
-                        "id": thread_id,
-                        "title": title,
-                        "content": content,
-                        "timestamp": thread['time'],
-                        "comments_count": thread.get('replies', 0),
-                        "upvotes": None,
-                        "author": "Anonymous",
-                        "comments": comments,
-                        "topic": search_query
-                    })
-                except:
-                    continue
+                    except:
+                        continue
 
     return posts
 
@@ -100,7 +102,7 @@ def save_data(data, search_query):
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
         print(f"Created directory: {out_dir}")
-            
+
     # Convert the nested comments structure to a string or separate files
     df = pd.DataFrame(data)
 
@@ -138,6 +140,12 @@ def clean_html_text(text):
     soup = BeautifulSoup(text, 'html.parser')
     clean_text = soup.get_text(separator=' ')
 
+    # Remove ">>" references
+    clean_text = re.sub(r'>>\d+', '', clean_text)
+
+    # Remove single ">" characters at the beginning of the text or after whitespace
+    clean_text = re.sub(r'\s?>', '', clean_text)
+
     # Remove extra whitespace
     clean_text = ' '.join(clean_text.split())
 
@@ -145,13 +153,14 @@ def clean_html_text(text):
 
 if __name__ == "__main__":
     SEARCH_QUERY = "trump"  # or any other topic you want to analyze
+    CHANBOARDS = ["pol", "news", "int", "b"]
 
     print(f"Fetching Reddit posts about '{SEARCH_QUERY}'...")
-    reddit_data = fetch_reddit_posts(search_query=SEARCH_QUERY, limit=10)
+    reddit_data = fetch_reddit_posts(search_query=SEARCH_QUERY, limit=100)
     print(f"Fetched {len(reddit_data)} Reddit posts")
 
     print(f"Fetching 4chan posts about '{SEARCH_QUERY}'...")
-    chan_data = fetch_4chan_posts(search_query=SEARCH_QUERY)
+    chan_data = fetch_4chan_posts(boards=CHANBOARDS, search_query=SEARCH_QUERY)
     print(f"Fetched {len(chan_data)} 4chan posts")
 
     combined_data = reddit_data + chan_data
