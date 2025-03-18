@@ -1,2 +1,4 @@
 .env
 out
+data
+.ipynb_checkpoints
